@@ -12,7 +12,7 @@ echo "== test-debit (limite ${LIMITE}/s, rafale ${RAFALE}) =="
 # ── Témoin : à rythme lent, tout passe ────────────────────────────────
 n_ok=0
 for _ in 1 2 3; do
-  geo_get "/v1/geocode/search?q=alger&country=dz" >/dev/null
+  geo_get "/v1/geocode/search?q=alger&country=dz"
   [[ "$GEO_HTTP" == "200" ]] && n_ok=$((n_ok+1))
   sleep 0.5
 done
@@ -29,7 +29,7 @@ wait
 
 n_200="$(grep -c '^200$' "$codes_file" || true)"
 n_429="$(grep -c '^429$' "$codes_file" || true)"
-n_autre="$(grep -vc -e '^200$' -e '^429$' "$codes_file" || true)"
+n_autre="$(grep -Evc '^(200|429)$' "$codes_file" || true)"
 rm -f "$codes_file"
 echo "  → 200:${n_200}  429:${n_429}  autres:${n_autre}"
 
@@ -39,7 +39,7 @@ assert_eq "0" "$n_autre" "aucun code inattendu (pas de 5xx sous la rafale)"
 
 # ── Après la rafale, le service revient ───────────────────────────────
 sleep 1.5
-geo_get "/v1/geocode/search?q=alger&country=dz" >/dev/null
+geo_get "/v1/geocode/search?q=alger&country=dz"
 assert_eq "200" "$GEO_HTTP" "le quota se recharge : 200 après la fenêtre"
 
 summary

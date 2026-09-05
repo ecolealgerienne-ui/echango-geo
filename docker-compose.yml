@@ -44,7 +44,7 @@ services:
       REPLICATION_URL: https://download.geofabrik.de/africa/algeria-updates/
       NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:-nominatim}
     volumes:
-      - nominatim_data:/var/lib/postgresql/14/main
+      - nominatim_data:/var/lib/postgresql/16/main
     ports:
       # Pratique pour inspecter Nominatim directement pendant le dev ; sans
       # incidence sur le service, qui passe par le réseau interne.

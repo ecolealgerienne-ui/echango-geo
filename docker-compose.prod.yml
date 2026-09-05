@@ -48,7 +48,7 @@ services:
       REPLICATION_URL: https://download.geofabrik.de/africa/algeria-updates/
       NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:-nominatim}
     volumes:
-      - nominatim_data:/var/lib/postgresql/14/main
+      - nominatim_data:/var/lib/postgresql/16/main
     networks: [echango_network]
     healthcheck:
       test: ['CMD-SHELL', 'curl -sf http://localhost:8080/status.php || exit 1']
