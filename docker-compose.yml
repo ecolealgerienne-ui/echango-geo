@@ -1,17 +1,23 @@
-# Stack echango-geo — suit le patron rodé sur le VPS
-# (echangopromo/docker-compose.promo.yml) : réseau Docker externe partagé
-# `echango_network`, aucun port publié sur l'hôte, aucun routeur Traefik
-# (§7.1 : ce service n'est appelé que par d'autres backends du réseau, jamais
-# par une app mobile).
+# Stack echango-geo — LOCAL (développement, bancs de vérification).
 #
-# Lancer : docker compose --env-file .env.production -f docker-compose.yml up -d
+# Autonome : réseau bridge créé par ce fichier, ports publiés sur l'hôte,
+# aucune dépendance à `echango_network` ni à Traefik. C'est ce fichier que
+# `docker compose` lit par défaut.
 #
-# Prérequis : le réseau `echango_network` doit déjà exister (stack principale
-# du VPS démarrée au moins une fois).
+# Le pendant production — réseau externe partagé, aucun port publié — est
+# dans docker-compose.prod.yml.
 #
-# `name:` explicite — la dérivation depuis le nom de dossier a déjà corrompu
-# une base de prod chez echangopromo (docs/status_v0.md). Ne pas répéter.
-name: echango-geo
+# Lancer :
+#   cp .env.example .env          # au minimum un GEO_INTERNAL_TOKEN quelconque
+#   docker compose up -d          # le 1er démarrage importe l'extrait DZ (long)
+#   docker compose logs -f geo-nominatim   # suivre l'import
+#
+# Bancs, une fois `geo-nominatim` sain :
+#   cd scripts && GEO_INTERNAL_TOKEN=<celui du .env> ./test-geocode-search.sh
+#
+# `name:` distinct du fichier prod pour que les deux stacks ne partagent
+# jamais le volume Nominatim.
+name: echango-geo-local
 
 services:
   geo-api:
@@ -20,43 +26,39 @@ services:
     depends_on:
       geo-nominatim:
         condition: service_healthy
-    env_file: [.env.production]
-    networks: [echango_network]
-    # Pas de `ports:` publié, pas de labels Traefik — voir §7.1.
+    env_file: [.env]
+    environment:
+      # Le conteneur joint Nominatim par le nom de service du réseau interne,
+      # pas par le port publié sur l'hôte.
+      NOMINATIM_INTERNAL_URL: http://geo-nominatim:8080
+    ports:
+      # Cible des bancs : http://localhost:3000
+      - '${GEO_API_HOST_PORT:-3000}:3000'
+    networks: [geo]
 
   geo-nominatim:
     image: mediagis/nominatim:4.5
     restart: unless-stopped
     environment:
-      # ── Import initial (§6.2) ────────────────────────────────────────────
-      # Extrait Geofabrik par pays, ~quelques centaines de Mo, mis à jour
-      # quotidiennement — pas la planète entière.
-      #
-      # ⚠️ GEO_SUPPORTED_COUNTRIES vaut `dz,ae` par défaut, mais l'image
-      # n'importe qu'UN `PBF_URL`. Pour ajouter les Émirats : fusionner
-      # algeria-latest.osm.pbf et l'extrait AE avec `osmium merge` en amont,
-      # monter le .pbf fusionné et pointer `PBF_PATH` dessus. Région AE exacte
-      # à confirmer (§10 : `middle-east` couvre plusieurs pays). Tant que ce
-      # n'est pas fait, garder GEO_SUPPORTED_COUNTRIES=dz pour que `country=ae`
-      # échoue franchement plutôt que de chercher dans un extrait absent.
       PBF_URL: https://download.geofabrik.de/africa/algeria-latest.osm.pbf
       REPLICATION_URL: https://download.geofabrik.de/africa/algeria-updates/
       NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:-nominatim}
     volumes:
       - nominatim_data:/var/lib/postgresql/14/main
-    networks: [echango_network]
+    ports:
+      # Pratique pour inspecter Nominatim directement pendant le dev ; sans
+      # incidence sur le service, qui passe par le réseau interne.
+      - '${NOMINATIM_HOST_PORT:-8088}:8080'
+    networks: [geo]
     healthcheck:
       test: ['CMD-SHELL', 'curl -sf http://localhost:8080/status.php || exit 1']
       interval: 30s
       timeout: 10s
       retries: 10
-      # L'import initial d'un extrait pays prend de longues minutes ; ne pas
-      # marquer `unhealthy` pendant ce temps.
       start_period: 30m
 
 networks:
-  echango_network:
-    external: true
+  geo:
 
 volumes:
   nominatim_data:

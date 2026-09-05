@@ -35,7 +35,7 @@ Contrat d'erreur (namespace `geo.*`) : `geo.invalid_query` (400),
 `geo.country_not_configured` (400), `geo.upstream_unavailable` (503),
 `geo.upstream_rate_limited` (503), `geo.unauthorized` (401).
 
-## Développement
+## Développement — API seule (sans Docker)
 
 ```bash
 cd apps/api
@@ -45,19 +45,37 @@ npm run start:dev
 npm test                      # tests unitaires
 ```
 
-Sans conteneur Nominatim en face, `/v1/geocode/*` répond `503`
+Sans Nominatim en face, `/v1/geocode/*` répond `503`
 `geo.upstream_unavailable` (attendu) ; `/health` reste `200` avec
 `nominatim.reachable: false`.
 
-## Déploiement (VPS)
+## Déploiement local — stack complète (`docker-compose.yml`)
+
+Autonome : réseau bridge, ports publiés sur l'hôte, pas d'`echango_network`.
+C'est la stack que visent les bancs de vérification.
+
+```bash
+cp .env.example .env                     # GEO_INTERNAL_TOKEN de dev
+docker compose up -d                     # 1er démarrage : import de l'extrait DZ (long)
+docker compose logs -f geo-nominatim     # suivre l'import
+```
+
+`geo-api` sur `http://localhost:3000`, Nominatim exposé sur `:8088` (debug).
+
+## Déploiement production — VPS (`docker-compose.prod.yml`)
+
+Réseau Docker externe partagé `echango_network`, aucun port publié, aucun
+Traefik (§7.1). `geo-api` n'est joignable que par les autres backends du
+réseau.
 
 ```bash
 cp .env.production.example .env.production   # renseigner les secrets
-docker compose --env-file .env.production -f docker-compose.yml up -d
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 ```
 
-Le premier démarrage importe l'extrait Geofabrik dans Nominatim (plusieurs
-minutes) ; `geo-api` attend `geo-nominatim` sain avant de démarrer.
+Prérequis : `echango_network` doit déjà exister. Le premier démarrage importe
+l'extrait Geofabrik dans Nominatim (plusieurs minutes) ; `geo-api` attend
+`geo-nominatim` sain avant de démarrer.
 
 ## Bancs de vérification
 
@@ -73,5 +91,7 @@ le défaut qu'il garde :
 | `test-panne-nominatim.sh` | Nominatim coupé → `503` (jamais `400`) ; `/health` `200` + `reachable: false` |
 | `test-debit.sh` | rafale > quota → `429`, sans faire tomber le service |
 
-Variables : `GEO_BASE_URL` (défaut `http://localhost:3000`),
-`GEO_INTERNAL_TOKEN` (requis).
+Variables : `GEO_BASE_URL` (défaut `http://localhost:3000`, la stack locale),
+`GEO_INTERNAL_TOKEN` (requis, celui du `.env`). `test-panne-nominatim.sh`
+manipule la stack (`docker compose stop/start geo-nominatim`) — à lancer sur
+l'environnement local, pas en prod.
