@@ -77,16 +77,24 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 Geofabrik publie un diff par jour. `nominatim replication` les applique en
 continu, sans interruption de service — pas de re-import mensuel (§10).
 
-```bash
-# 1. UNE fois, après que l'import initial est terminé :
-docker compose --env-file .env.production -f docker-compose.prod.yml \
-  exec -T geo-nominatim sudo -u nominatim nominatim replication --init
+`nominatim replication --init` **n'est pas à faire à la main** : l'image
+`mediagis/nominatim:4.5` l'exécute au premier démarrage quand `REPLICATION_URL`
+est défini (log `Initialising replication updates` / `Updates initialised at
+sequence …`).
 
-# 2. Cron hôte — un passage horaire suffit (un diff/jour, appliqué au
-#    prochain tour). `scripts/refresh-osm.sh` fait l'appel `--once`.
-( crontab -l 2>/dev/null; \
-  echo "0 * * * * cd /opt/echango-geo && ./scripts/refresh-osm.sh >> /var/log/echango-geo-osm.log 2>&1" \
-) | crontab -
+```bash
+# 1. Purger le retard accumulé depuis la date de l'extrait importé (--catch-up
+#    applique TOUS les diffs disponibles d'un coup). Optionnel — sans impact
+#    sur la précision, mais évite plusieurs jours de rattrapage horaire.
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  exec -T geo-nominatim sudo -u nominatim nominatim replication --catch-up --project-dir /nominatim
+
+# 2. Cron — `scripts/refresh-osm.sh` fait un `replication --once` par passage.
+#    ⚠️ Il parle au démon Docker : le mettre dans la crontab de ROOT (l'user
+#    `ubuntu` n'est pas dans le groupe `docker`), ou `usermod -aG docker ubuntu`.
+sudo crontab -e
+# y ajouter :
+#   0 * * * * cd /opt/echango-geo && ./scripts/refresh-osm.sh >> /var/log/echango-geo-osm.log 2>&1
 ```
 
 ---
@@ -99,8 +107,13 @@ docker compose --env-file .env.production -f docker-compose.prod.yml \
   exec -T geo-api node -e "fetch('http://localhost:3000/health').then(r=>r.json()).then(j=>console.log(JSON.stringify(j)))"
 # → {"status":"ok","dependencies":{"nominatim":{"reachable":true}, ...}}
 
-# 2. Une vraie requête, avec le jeton, depuis un backend consommateur
-#    (le conteneur delivery/promo, attaché à echango_network) :
+# 2. Une vraie requête géocodée, avec le jeton, depuis geo-api lui-même
+#    (avant qu'un consommateur soit déployé) :
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T geo-api \
+  sh -c 'node -e "fetch(\"http://localhost:3000/v1/geocode/search?q=Alger&country=dz&limit=1\",{headers:{\"X-Internal-Token\":process.env.GEO_INTERNAL_TOKEN}}).then(r=>r.text()).then(console.log)"'
+# → {"results":[{"label":"Alger, …","city":"Alger","country":"DZ", …}]}
+
+# 3. Plus tard, depuis un backend consommateur attaché à echango_network :
 docker exec <conteneur-backend> node -e "
   fetch('http://geo-api:3000/v1/geocode/search?q=Alger&country=dz&limit=1', {
     headers: { 'X-Internal-Token': process.env.GEO_INTERNAL_TOKEN }
