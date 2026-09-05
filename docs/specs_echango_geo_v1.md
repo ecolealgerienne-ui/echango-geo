@@ -424,21 +424,25 @@ mutation, jamais seulement par un cas qui passe) :
 
 ---
 
-## 10. Décisions ouvertes à trancher avant le développement
+## 10. Décisions — tranchées le 2026-09-05
 
-- **Authentification interne** : réseau Docker fermé seul, ou en plus un
-  jeton partagé en en-tête ? Recommandation : réseau fermé en v1 (§7.1),
-  jeton ajoutable sans casser le contrat si un jour un consommateur externe
-  au réseau `echango_network` apparaît.
-- **Extrait Geofabrik pour les Émirats** : région exacte à confirmer
-  (`middle-east` sur Geofabrik couvre plusieurs pays — vérifier la taille
-  avant de l'importer en entier si seul AE est nécessaire).
-- **Cadence de rafraîchissement** de l'extrait Nominatim — mensuel proposé
-  en §6.2, à confirmer selon le taux de correction d'adresses observé.
-- **Cache de résultats de géocodage** entre produits (une même adresse
-  recherchée par deux commerçants de deux produits différents) — non
-  spécifié ici, gain incertain tant que Nominatim est local et rapide ; à
-  mesurer avant de construire.
+- **Authentification interne** : ✅ **jeton partagé requis** (`X-Internal-Token`,
+  §7.1) en plus du réseau Docker fermé. Le guard est *fail-closed* : sans
+  `GEO_INTERNAL_TOKEN`, le service refuse tout. Consommateurs migrés :
+  `echango-delivery` (§8.1), `echangopromo` (§8.3), `echango_promo_crm` (§8.2).
+- **Extrait Geofabrik pour les Émirats** : ✅ **abandonné** — pas de besoin
+  confirmé. `GEO_SUPPORTED_COUNTRIES=dz` en production ; une requête
+  `country=ae` est refusée en `geo.country_not_configured`, franchement.
+- **Cadence de rafraîchissement** : ✅ **diffs Geofabrik en continu** via
+  `nominatim replication` (l'image `mediagis/nominatim` l'embarque,
+  `REPLICATION_URL` déjà pointé), pas un re-import mensuel qui couperait le
+  service et perdrait un mois de corrections. Cron hôte horaire —
+  `scripts/refresh-osm.sh`. `nominatim replication --init` une fois après
+  l'import initial.
+- **Cache de résultats de géocodage** : ✅ **non construit**. Nominatim local
+  répond sous 100 ms ; un cache ajouterait une invalidation et un couplage
+  inter-produits pour un gain non démontré. À rouvrir seulement si une mesure
+  fait apparaître un point chaud réel.
 
 ---
 

@@ -35,15 +35,12 @@ services:
     restart: unless-stopped
     environment:
       # ── Import initial (§6.2) ────────────────────────────────────────────
-      # Extrait Geofabrik par pays, ~quelques centaines de Mo, mis à jour
-      # quotidiennement — pas la planète entière.
+      # Extrait Geofabrik Algérie (~quelques centaines de Mo). Les Émirats
+      # sont écartés (§10, décision du 2026-09-05) : GEO_SUPPORTED_COUNTRIES
+      # reste `dz`, et `country=ae` est refusé franchement.
       #
-      # ⚠️ L'image n'importe qu'UN `PBF_URL`. Pour ajouter les Émirats :
-      # fusionner algeria-latest.osm.pbf et l'extrait AE avec `osmium merge`
-      # en amont, monter le .pbf fusionné et pointer `PBF_PATH` dessus. Région
-      # AE exacte à confirmer (§10). Tant que ce n'est pas fait, garder
-      # GEO_SUPPORTED_COUNTRIES=dz pour que `country=ae` échoue franchement
-      # plutôt que de chercher dans un extrait absent.
+      # `REPLICATION_URL` : diffs quotidiens Geofabrik, appliqués en continu
+      # par `scripts/refresh-osm.sh` (cron hôte) — pas de re-import mensuel.
       PBF_URL: https://download.geofabrik.de/africa/algeria-latest.osm.pbf
       REPLICATION_URL: https://download.geofabrik.de/africa/algeria-updates/
       NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:-nominatim}
