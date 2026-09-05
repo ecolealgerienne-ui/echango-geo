@@ -1,0 +1,5 @@
+# Les scripts tournent sur le VPS (Linux) et dans les conteneurs : fins de
+# ligne LF quoi qu'il arrive, un CRLF casse le shebang.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf

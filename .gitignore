@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+# Secrets — seuls les .example sont versionnés
+.env
+.env.*
+!.env.example
+!.env.production.example

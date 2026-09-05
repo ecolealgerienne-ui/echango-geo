@@ -1,0 +1,62 @@
+# Stack echango-geo — suit le patron rodé sur le VPS
+# (echangopromo/docker-compose.promo.yml) : réseau Docker externe partagé
+# `echango_network`, aucun port publié sur l'hôte, aucun routeur Traefik
+# (§7.1 : ce service n'est appelé que par d'autres backends du réseau, jamais
+# par une app mobile).
+#
+# Lancer : docker compose --env-file .env.production -f docker-compose.yml up -d
+#
+# Prérequis : le réseau `echango_network` doit déjà exister (stack principale
+# du VPS démarrée au moins une fois).
+#
+# `name:` explicite — la dérivation depuis le nom de dossier a déjà corrompu
+# une base de prod chez echangopromo (docs/status_v0.md). Ne pas répéter.
+name: echango-geo
+
+services:
+  geo-api:
+    build: ./apps/api
+    restart: unless-stopped
+    depends_on:
+      geo-nominatim:
+        condition: service_healthy
+    env_file: [.env.production]
+    networks: [echango_network]
+    # Pas de `ports:` publié, pas de labels Traefik — voir §7.1.
+
+  geo-nominatim:
+    image: mediagis/nominatim:4.5
+    restart: unless-stopped
+    environment:
+      # ── Import initial (§6.2) ────────────────────────────────────────────
+      # Extrait Geofabrik par pays, ~quelques centaines de Mo, mis à jour
+      # quotidiennement — pas la planète entière.
+      #
+      # ⚠️ GEO_SUPPORTED_COUNTRIES vaut `dz,ae` par défaut, mais l'image
+      # n'importe qu'UN `PBF_URL`. Pour ajouter les Émirats : fusionner
+      # algeria-latest.osm.pbf et l'extrait AE avec `osmium merge` en amont,
+      # monter le .pbf fusionné et pointer `PBF_PATH` dessus. Région AE exacte
+      # à confirmer (§10 : `middle-east` couvre plusieurs pays). Tant que ce
+      # n'est pas fait, garder GEO_SUPPORTED_COUNTRIES=dz pour que `country=ae`
+      # échoue franchement plutôt que de chercher dans un extrait absent.
+      PBF_URL: https://download.geofabrik.de/africa/algeria-latest.osm.pbf
+      REPLICATION_URL: https://download.geofabrik.de/africa/algeria-updates/
+      NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:-nominatim}
+    volumes:
+      - nominatim_data:/var/lib/postgresql/14/main
+    networks: [echango_network]
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf http://localhost:8080/status.php || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      # L'import initial d'un extrait pays prend de longues minutes ; ne pas
+      # marquer `unhealthy` pendant ce temps.
+      start_period: 30m
+
+networks:
+  echango_network:
+    external: true
+
+volumes:
+  nominatim_data:
