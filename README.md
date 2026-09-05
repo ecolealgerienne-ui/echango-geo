@@ -64,18 +64,21 @@ docker compose logs -f geo-nominatim     # suivre l'import
 
 ## Déploiement production — VPS (`docker-compose.prod.yml`)
 
-Réseau Docker externe partagé `echango_network`, aucun port publié, aucun
-Traefik (§7.1). `geo-api` n'est joignable que par les autres backends du
-réseau.
+`geo-nominatim` sur le réseau `internal` seul (les backends passent par
+`geo-api`), `geo-api` sur `internal` + `echango_network` externe, aucun port
+publié, aucun Traefik (§7.1).
 
 ```bash
-cp .env.production.example .env.production   # renseigner les secrets
+cp .env.production.example .env.production   # GEO_INTERNAL_TOKEN, NOMINATIM_DB_PASSWORD
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 ```
 
 Prérequis : `echango_network` doit déjà exister. Le premier démarrage importe
-l'extrait Geofabrik dans Nominatim (plusieurs minutes) ; `geo-api` attend
-`geo-nominatim` sain avant de démarrer.
+l'extrait Geofabrik (~20–45 min) ; `geo-api` attend `geo-nominatim` sain.
+
+**Procédure complète** (import initial, `nominatim replication --init`, cron
+`refresh-osm.sh`, coordination du jeton avec les consommateurs, redéploiement) :
+[`docs/DEPLOIEMENT_VPS.md`](docs/DEPLOIEMENT_VPS.md).
 
 ## Bancs de vérification
 

@@ -1,22 +1,41 @@
-# Stack echango-geo — PRODUCTION (VPS).
+# Stack de production pour le VPS (/opt/echango-geo) — distincte de
+# docker-compose.yml (dev local : ports hôte exposés, réseau bridge autonome).
+# Calquée sur echangopromo/docker-compose.promo.yml. Ici :
 #
-# Suit le patron rodé sur le VPS (echangopromo/docker-compose.promo.yml) :
-# réseau Docker externe partagé `echango_network`, AUCUN port publié sur
-# l'hôte, AUCUN routeur Traefik (§7.1 : ce service n'est appelé que par
-# d'autres backends du réseau, jamais par une app mobile).
+#   - geo-nominatim reste sur le réseau `internal` UNIQUEMENT : aucun port
+#     hôte, jamais attaché à `echango_network`. C'est délibéré — les autres
+#     backends de l'écosystème n'appellent QUE geo-api, jamais Nominatim
+#     directement (§1.3, §7.1). Nommé `geo-nominatim` et non `nominatim` ni
+#     `postgres` : la stack promo et la stack Vendure ont déjà chacune un
+#     service à nom générique sur `echango_network`, et une collision de nom
+#     DNS y a déjà causé un incident de déploiement réel côté promo
+#     (« password authentication failed » mot de passe pourtant correct).
 #
-# Le pendant local — ports publiés, réseau autonome, pas d'`echango_network`
-# — est dans docker-compose.yml (celui que `docker compose` lit par défaut).
+#   - geo-api rejoint `internal` (pour joindre geo-nominatim) ET
+#     `echango_network` (pour être joignable des autres backends par son nom
+#     de service). AUCUN label Traefik, AUCUN port publié : contrairement à
+#     promo, ce service n'a pas de routeur public — la seule frontière
+#     d'accès est le réseau Docker, plus le jeton `X-Internal-Token`.
 #
-# Lancer : docker compose --env-file .env.production -f docker-compose.prod.yml up -d
+# Un seul fichier d'env — `.env.production`, racine du repo — sert à la fois
+# de `--env-file` (substitution `${...}` ci-dessous, pour NOMINATIM_DB_PASSWORD)
+# et d'`env_file` du service geo-api. Un seul fichier, pas deux, pour ne pas
+# tenir le mot de passe Nominatim synchronisé à la main à deux endroits.
 #
-# Prérequis : le réseau `echango_network` doit déjà exister (stack principale
-# du VPS démarrée au moins une fois).
+# Lancer toujours avec :
+#   docker compose --env-file .env.production -f docker-compose.prod.yml <commande>
 #
-# `name:` distinct du fichier local — sans ça, Compose dérive le nom de projet
-# du dossier et les deux stacks partageraient le même volume Nominatim (une
-# collision de ce genre a corrompu une base de prod chez echangopromo, voir
-# leur docs/status_v0.md).
+# Prérequis sur le VPS : le réseau `echango_network` doit déjà exister (stack
+# principale démarrée au moins une fois) avant `up`, sinon Compose échoue à la
+# création du réseau externe introuvable.
+#
+# Premier déploiement, import initial, réplication OSM, coordination du jeton
+# avec les consommateurs : docs/DEPLOIEMENT_VPS.md
+#
+# `name:` explicite : sans ça, Compose dérive le nom de projet du dossier
+# (`echango-geo`), le MÊME que docker-compose.yml (dev local) — les deux
+# stacks partageraient alors le volume Nominatim physique. Ce `name:` distinct
+# l'empêche (même raison que chez promo, incident de corruption de base réel).
 name: echango-geo-prod
 
 services:
@@ -26,37 +45,41 @@ services:
     depends_on:
       geo-nominatim:
         condition: service_healthy
-    env_file: [.env.production]
-    networks: [echango_network]
-    # Pas de `ports:` publié, pas de labels Traefik — voir §7.1.
+    env_file:
+      - ./.env.production
+    networks:
+      - internal
+      - echango_network
+    # Pas de `ports:`, pas de labels Traefik — voir l'en-tête (§7.1).
 
   geo-nominatim:
     image: mediagis/nominatim:4.5
     restart: unless-stopped
     environment:
-      # ── Import initial (§6.2) ────────────────────────────────────────────
       # Extrait Geofabrik Algérie (~quelques centaines de Mo). Les Émirats
       # sont écartés (§10, décision du 2026-09-05) : GEO_SUPPORTED_COUNTRIES
       # reste `dz`, et `country=ae` est refusé franchement.
       #
-      # `REPLICATION_URL` : diffs quotidiens Geofabrik, appliqués en continu
-      # par `scripts/refresh-osm.sh` (cron hôte) — pas de re-import mensuel.
+      # `REPLICATION_URL` : diffs Geofabrik appliqués en continu par
+      # `scripts/refresh-osm.sh` (cron hôte) — pas de re-import mensuel.
       PBF_URL: https://download.geofabrik.de/africa/algeria-latest.osm.pbf
       REPLICATION_URL: https://download.geofabrik.de/africa/algeria-updates/
       NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:-nominatim}
     volumes:
       - nominatim_data:/var/lib/postgresql/16/main
-    networks: [echango_network]
+    networks:
+      - internal
     healthcheck:
       test: ['CMD-SHELL', 'curl -sf http://localhost:8080/status.php || exit 1']
       interval: 30s
       timeout: 10s
       retries: 10
       # L'import initial d'un extrait pays prend de longues minutes ; ne pas
-      # marquer `unhealthy` pendant ce temps.
-      start_period: 30m
+      # marquer `unhealthy` pendant ce temps (geo-api attend `service_healthy`).
+      start_period: 45m
 
 networks:
+  internal:
   echango_network:
     external: true
 
